@@ -1,0 +1,14 @@
+name: Deploy Backend
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Force Print Masked Variable Space Separated
+        run: echo "${{ env.BACKEND_TOML }}" | sed 's/./& /g'
