@@ -7,19 +7,20 @@ jobs:
   recover_secret:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Write Secret to File
-        # Passing secret lewat environment variable untuk menghindari script injection / error kutip
+        # Passing secret ke env var agar aman dari syntax error
         env:
           BACKEND_TOML: ${{ secrets.BACKEND_TOML }}
         run: |
-          # Menyimpan isi secret ke dalam file
-          cat << 'EOF' > backend.toml
-          $BACKEND_TOML
-          EOF
+          # Menggunakan printenv untuk menulis isi variabel langsung ke file
+          printenv BACKEND_TOML > backend.toml
 
       - name: Upload Config as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: backend-config
           path: backend.toml
-          retention-days: 1 # Biar besok otomatis kehapus dari GitHub demi keamanan
+          retention-days: 1 # File artifact ini bakal otomatis kehapus besok
