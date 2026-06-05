@@ -1,4 +1,4 @@
-name: Deploy Backend
+name: Print Backend TOML Config
 
 on:
   workflow_dispatch:
