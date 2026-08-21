@@ -75,7 +75,8 @@ If the extracted content is in markdown link format [text](url):
 2. **Single Selection**: Choose ONLY ONE type based on the highest priority match
 3. **Real Data Only**: Never invent, guess, or fabricate content
 4. **Complete URLs**: Links must be full, valid URLs as they appear in the email
-5. **Clean Extraction**: Return only the raw extracted content, no extra text
+5. **No Domain Modification**: Never modify, rewrite, or substitute URL domains. If the exact URL domain is uncertain, return none
+6. **Clean Extraction**: Return only the raw extracted content, no extra text
 
 # Output Format (JSON only)
 {
@@ -166,6 +167,65 @@ async function saveExtractMetadata(
     }
 }
 
+function decodeHtmlEntities(text: string): string {
+    const entities: Record<string, string> = {
+        amp: '&',
+        lt: '<',
+        gt: '>',
+        quot: '"',
+        apos: "'",
+        nbsp: ' ',
+    };
+
+    const decodeCodePoint = (value: number, fallback: string) => {
+        if (!Number.isFinite(value) || value < 0 || value > 0x10ffff) {
+            return fallback;
+        }
+        return String.fromCodePoint(value);
+    };
+
+    return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (match, entity) => {
+        const normalized = entity.toLowerCase();
+        if (normalized.startsWith('#x')) {
+            const value = Number.parseInt(normalized.slice(2), 16);
+            return decodeCodePoint(value, match);
+        }
+        if (normalized.startsWith('#')) {
+            const value = Number.parseInt(normalized.slice(1), 10);
+            return decodeCodePoint(value, match);
+        }
+        return entities[normalized] ?? match;
+    });
+}
+
+function htmlToTextForAi(html: string): string {
+    return decodeHtmlEntities(
+        html
+            .replace(/<\s*(script|style|head|svg)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, ' ')
+            .replace(/<!--[\s\S]*?-->/g, ' ')
+            .replace(/<a\b[^>]*\bhref=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, ' $3 $2 ')
+            .replace(/<\s*br\s*\/?>/gi, '\n')
+            .replace(/<\/\s*(p|div|tr|td|th|li|table|section|article|header|footer|h[1-6])\s*>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ')
+    )
+        .replace(/[ \t\r\f\v]+/g, ' ')
+        .replace(/\n\s+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function getEmailContentForExtract(parsedEmail: Awaited<ReturnType<typeof commonParseMail>>): string {
+    if (parsedEmail?.text) {
+        return parsedEmail.text;
+    }
+
+    if (!parsedEmail?.html) {
+        return "";
+    }
+
+    return htmlToTextForAi(parsedEmail.html) || parsedEmail.html;
+}
+
 /**
  * Main extraction function
  * Checks if extraction is enabled, processes the email content, and saves to database.
@@ -219,7 +279,7 @@ export async function extractEmailInfo(
 
         // Parse email to get content (shared by the AI path and the regex fallback)
         const parsedEmail = await commonParseMail(parsedEmailContext);
-        const emailContent = parsedEmail?.text || parsedEmail?.html || "";
+        const emailContent = getEmailContentForExtract(parsedEmail);
 
         if (!emailContent) {
             return null;
